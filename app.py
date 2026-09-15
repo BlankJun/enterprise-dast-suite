@@ -22,7 +22,7 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# VERİTABANI VE GEÇMİŞ (DIFF) YÖNETİMİ
+# VERİTABANI VE KULLANICI / LİMİT YÖNETİMİ
 # ==============================================================================
 
 def veritabani_baslat():
@@ -40,6 +40,14 @@ def veritabani_baslat():
             risk_skoru INTEGER
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS kullanicilar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE,
+            kalan_hak INTEGER,
+            kayit_tarihi TEXT
+        )
+    """)
     try:
         cursor.execute("ALTER TABLE taramalar ADD COLUMN risk_skoru INTEGER")
     except sqlite3.OperationalError:
@@ -47,8 +55,92 @@ def veritabani_baslat():
     conn.commit()
     conn.close()
 
+veritabani_baslat()
+
+def eposta_kaydet_ve_hak_ver(email: str) -> tuple[bool, str]:
+    conn = sqlite3.connect("dast_history.db")
+    cursor = conn.cursor()
+    try:
+        tarih = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Yeni kullanıcıya 10 hak veriyoruz
+        cursor.execute("INSERT INTO kullanicilar (email, kalan_hak, kayit_tarihi) VALUES (?, 10, ?)", (email, tarih))
+        conn.commit()
+        conn.close()
+        return True, "Başarıyla kayıt oldun! +10 tarama hakkı tanımlandı."
+    except sqlite3.IntegrityError:
+        conn.close()
+        return False, "Bu e-posta adresi ile daha önce kayıt olunmuş!"
+
+def kullanici_hak_getir(email: str) -> int:
+    if not email:
+        return 0
+    conn = sqlite3.connect("dast_history.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT kalan_hak FROM kullanicilar WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+def hak_dusur(email: str):
+    if not email:
+        return
+    conn = sqlite3.connect("dast_history.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE kullanicilar SET kalan_hak = kalan_hak - 1 WHERE email = ? AND kalan_hak > 0", (email,))
+    conn.commit()
+    conn.close()
+
+# Oturum yönetimi (Session State)
+if "misafir_hak" not in st.session_state:
+    st.session_state["misafir_hak"] = 5
+if "giris_yapilan_email" not in st.session_state:
+    st.session_state["giris_yapilan_email"] = None
+
+# ==============================================================================
+# YAN MENÜ (SIDEBAR): KULLANIM HAKKI & BUY ME A COFFEE
+# ==============================================================================
+
+with st.sidebar:
+    st.image("https://img.icons8.com/color/96/security-checked.png", width=64)
+    st.subheader("Oturum & Kullanım Hakları")
+    
+    aktif_email = st.session_state.get("giris_yapilan_email")
+    
+    if not aktif_email:
+        st.info(f"🎁 Misafir Haklarınız: **{st.session_state['misafir_hak']} / 5**")
+        st.markdown("---")
+        st.write("Daha fazla hak ve sınırsız özellikler için e-postanızla kayıt olun (+10 hak kazan):")
+        
+        girilen_email = st.text_input("E-Posta Adresiniz", placeholder="ornek@sirket.com")
+        if st.button("Kayıt Ol & 10 Hak Kazan", use_container_width=True):
+            if "@" in girilen_email and "." in girilen_email:
+                basarili, mesaj = eposta_kaydet_ve_hak_ver(girilen_email.strip().lower())
+                if basarili:
+                    st.session_state["giris_yapilan_email"] = girilen_email.strip().lower()
+                    st.success(mesaj)
+                    st.rerun()
+                else:
+                    st.error(mesaj)
+            else:
+                st.warning("Lütfen geçerli bir e-posta adresi girin.")
+    else:
+        kalan = kullanici_hak_getir(aktif_email)
+        st.success(f"Oturum Açık:\n`{aktif_email}`")
+        st.metric(label="🎯 Kalan Tarama Hakkınız", value=kalan)
+    
+    st.markdown("---")
+    st.markdown("### ☕ Projeyi Destekle")
+    st.markdown("Bu açık kaynaklı güvenlik aracını geliştirmemize ve sunucu maliyetlerine destek olmak ister misiniz?")
+    st.markdown(
+        '<a href="https://www.buymeacoffee.com" target="_blank"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=blankjun&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" /></a>',
+        unsafe_allow_html=True
+    )
+
+# ==============================================================================
+# VERİTABANI VE GEÇMİŞ (DIFF) YÖNETİMİ
+# ==============================================================================
+
 def gecmisi_kaydet(hedef: str, portlar: list, ifsa_sayisi: int, baslik_sayisi: int, rate_durum: str, risk_skoru: int):
-    veritabani_baslat()
     conn = sqlite3.connect("dast_history.db")
     cursor = conn.cursor()
     tarih = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -61,7 +153,6 @@ def gecmisi_kaydet(hedef: str, portlar: list, ifsa_sayisi: int, baslik_sayisi: i
     conn.close()
 
 def onceki_taramayi_getir(hedef: str) -> dict:
-    veritabani_baslat()
     conn = sqlite3.connect("dast_history.db")
     cursor = conn.cursor()
     cursor.execute("""
@@ -244,15 +335,35 @@ def html_rapor_olustur(hedef: str, markdown_metni: str, yama_metni: str, risk_sk
 st.title("🛡️ Enterprise DAST & Attack Surface Scanner")
 st.markdown("Hassas dosya sızıntıları, açık servisler ve risk skoru analizi yapan otonom güvenlik suite'i.")
 
+# Hak Kontrol Mantığı
+aktif_email = st.session_state.get("giris_yapilan_email")
+hak_bitti = False
+
+if aktif_email:
+    kalan = kullanici_hak_getir(aktif_email)
+    if kalan <= 0:
+        hak_bitti = True
+        st.warning("⚠️ Tarama hakkınız kalmadı! Daha fazla tarama için lütfen ek paketleri inceleyin.")
+else:
+    if st.session_state["misafir_hak"] <= 0:
+        hak_bitti = True
+        st.warning("🎁 Ücretsiz 5 misafir hakkınız bitti! Sınırsız tarama ve +10 hak için soldaki menüden e-postanızla kayıt olun.")
+
 col1, col2 = st.columns([4, 1])
 with col1:
-    hedef_url = st.text_input("Hedef Alan Adı veya URL", placeholder="örnek: scanme.nmap.org")
+    hedef_url = st.text_input("Hedef Alan Adı veya URL", placeholder="örnek: scanme.nmap.org", disabled=hak_bitti)
 with col2:
     st.write("")
     st.write("")
-    tara = st.button("Tam Denetimi Başlat", use_container_width=True, type="primary")
+    tara = st.button("Tam Denetimi Başlat", use_container_width=True, type="primary", disabled=hak_bitti)
 
-if tara and hedef_url:
+if tara and hedef_url and not hak_bitti:
+    # Hak düşürme işlemi
+    if aktif_email:
+        hak_dusur(aktif_email)
+    else:
+        st.session_state["misafir_hak"] -= 1
+
     bar = st.progress(0, text="Denetim başlatılıyor...")
     
     bar.progress(20, text="[1/4] Alt alan adları taranıyor...")
@@ -312,6 +423,7 @@ if tara and hedef_url:
     st.session_state["simdiki_ifsa"] = len(ifsa_dosyalar)
     st.session_state["simdiki_baslik"] = len(basliklar.get("eksik_basliklar", []))
     st.session_state["simdiki_skor"] = hesaplanan_skor
+    st.rerun()
 
 if "son_rapor" in st.session_state:
     skor_val = st.session_state.get("simdiki_skor", 0)
