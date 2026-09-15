@@ -62,7 +62,6 @@ def eposta_kaydet_ve_hak_ver(email: str) -> tuple[bool, str]:
     cursor = conn.cursor()
     try:
         tarih = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # Yeni kullanıcıya 10 hak veriyoruz
         cursor.execute("INSERT INTO kullanicilar (email, kalan_hak, kayit_tarihi) VALUES (?, 10, ?)", (email, tarih))
         conn.commit()
         conn.close()
@@ -97,7 +96,7 @@ if "giris_yapilan_email" not in st.session_state:
     st.session_state["giris_yapilan_email"] = None
 
 # ==============================================================================
-# YAN MENÜ (SIDEBAR): KULLANIM HAKKI & BUY ME A COFFEE
+# YAN MENÜ (SIDEBAR): KULLANIM HAKKI & TOPLULUK DESTEĞİ
 # ==============================================================================
 
 with st.sidebar:
@@ -129,12 +128,9 @@ with st.sidebar:
         st.metric(label="🎯 Kalan Tarama Hakkınız", value=kalan)
     
     st.markdown("---")
-    st.markdown("### ☕ Projeyi Destekle")
-    st.markdown("Bu açık kaynaklı güvenlik aracını geliştirmemize ve sunucu maliyetlerine destek olmak ister misiniz?")
-    st.markdown(
-        '<a href="https://www.buymeacoffee.com" target="_blank"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=blankjun&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" /></a>',
-        unsafe_allow_html=True
-    )
+    st.markdown("### 🌟 Projeyi Destekle")
+    st.markdown("Üretmekten büyük keyif alıyorum! Çalışmalarımın devam etmesini istiyorsanız projeyi **GitHub'da yıldızlayarak (Star)** ve paylaşarak destek olabilirsiniz.")
+    st.markdown("🚀 *Desteğiniz ve katkınız için teşekkürler!*")
 
 # ==============================================================================
 # VERİTABANI VE GEÇMİŞ (DIFF) YÖNETİMİ
@@ -343,11 +339,11 @@ if aktif_email:
     kalan = kullanici_hak_getir(aktif_email)
     if kalan <= 0:
         hak_bitti = True
-        st.warning("⚠️ Tarama hakkınız kalmadı! Daha fazla tarama için lütfen ek paketleri inceleyin.")
+        st.warning("⚠️ Tarama hakkınız kalmadı! Lütfen yeni bir oturum açın.")
 else:
     if st.session_state["misafir_hak"] <= 0:
         hak_bitti = True
-        st.warning("🎁 Ücretsiz 5 misafir hakkınız bitti! Sınırsız tarama ve +10 hak için soldaki menüden e-postanızla kayıt olun.")
+        st.warning("🎁 Ücretsiz 5 misafir hakkınız bitti! Devam etmek için soldaki menüden e-postanızla kayıt olun (+10 hak kazanın).")
 
 col1, col2 = st.columns([4, 1])
 with col1:
@@ -358,7 +354,6 @@ with col2:
     tara = st.button("Tam Denetimi Başlat", use_container_width=True, type="primary", disabled=hak_bitti)
 
 if tara and hedef_url and not hak_bitti:
-    # Hak düşürme işlemi
     if aktif_email:
         hak_dusur(aktif_email)
     else:
