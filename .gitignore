@@ -1,0 +1,4 @@
+.env
+dast_history.db
+__pycache__/
+.venv/
